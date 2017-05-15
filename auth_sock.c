@@ -106,7 +106,7 @@ authtool_send_eap(lua_State *L)
 {
 	fd_set fdR;
 	int32_t argc, mode;
-	static int32_t lua_callback = LUA_REFNIL;
+	int32_t lua_callback = LUA_REFNIL;
 	int8_t * smac_char, dmac_char, data_char;
 	size_t length;
 	uint8_t data_send[1024] = {0};		// 要发送的数据包的（原始形态，包含二层的) 假设1024字节够用 23333
@@ -119,7 +119,7 @@ authtool_send_eap(lua_State *L)
 
 	struct timeval timeout = {0, 0};
 	struct timeval tmp_timeout = timeout;
-	static time_t time_base = 0;
+	time_t time_base = 0;
 
 	// 获取参数
 	argc = lua_gettop(L);
@@ -231,7 +231,7 @@ authtool_send_udp(lua_State *L)
 	size_t length;
 
 	int32_t argc, mode;
-	static int32_t lua_callback = LUA_REFNIL;
+	int32_t lua_callback = LUA_REFNIL;
 	struct sockaddr_in server_addr, client_addr;
 	int8_t * data_char = {0};
 	uint8_t data_send[1024] = {0};
@@ -240,7 +240,7 @@ authtool_send_udp(lua_State *L)
 
 	struct timeval timeout = {0, 0};	// 抄来的，不知道为啥
 	struct timeval tmp_timeout = timeout;
-	static time_t time_base = 0;
+	time_t time_base = 0;
 
 	// 获取参数
 	argc = lua_gettop(L);
@@ -323,4 +323,58 @@ authtool_send_udp(lua_State *L)
 	} // if argc == 6
 	lua_pushnumber(L, SUCCESS);
 	return 1;
+}
+
+
+
+
+LUALIB_API int luaopen_authtool(lua_State *L) {
+
+    int i;
+    const luaL_reg functions[] = {
+        { "open", authtool_open },
+        { "close", authtool_close },
+        { "eap", authtool_send_eap },
+        { "udp", authtool_send_udp },
+        { NULL, NULL }
+    };
+    const struct {
+        const char *name;
+        int value;
+    } const_number[] = {
+        { "eap_recv_timeout", 3 },    // default
+        { "udp_recv_timeout", 3 },
+        // return codes
+        { "SUCCESS", SUCCESS },       // defined in auth_sock.h
+        { "ERR_SOCKET", ERR_SOCKET },
+        { "ERR_INPUT", ERR_INPUT },
+        { "ERR_TIMEOUT", ERR_TIMEOUT },
+        { "ERR_FUNC1", ERR_FUNC1 },
+    };
+    const struct {
+        const char *name;
+        const char *value;
+    } const_string[] = {
+        { "VERSION", VERSION },
+    };
+
+    if (luaL_newmetatable(L, AUTHTOOL_LIB_NAME)) {  // -1:metatable,
+
+        lua_pushstring(L, "__index");   // -2:metatable, -1:"__index"
+        lua_pushvalue(L, -2);           // -3:metatable, -2:"__index", -1:metatable
+        lua_settable(L, -3);            // setmetatable(THIS_LIB, metatable) ???
+
+        luaL_openlib(L, AUTHTOOL_LIB_NAME, functions, 0);   // stack: -1:THIS_LIB
+
+        for (i = 0; i < sizeof(const_number) / sizeof(const_number[0]); i++) {
+            lua_pushnumber(L, const_number[i].value);   // stack: -2:THIS_LIB -1:value
+            lua_setfield(L, -2, const_number[i].name);  // THIS_LIB.name = value
+        }
+        for (i = 0; i < sizeof(const_string) / sizeof(const_string[0]); i++) {
+            lua_pushstring(L, const_string[i].value);
+            lua_setfield(L, -2, const_string[i].name);
+        }
+    }
+
+    return 0;
 }
