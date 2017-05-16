@@ -54,7 +54,7 @@ authtool_send_eap(lua_State *L)
 	int32_t lua_callback = LUA_REFNIL;
 	int8_t * smac_char, dmac_char, data_char;
 	size_t length;
-	uint8_t data_send[1024] = {0};		
+	uint8_t data_send[1024] = {0};
 	uint8_t data_recv_buf[1024] = {0};
 	int8_t ifname[16] = {0};
 
@@ -101,6 +101,7 @@ authtool_send_eap(lua_State *L)
 	auth_8021x_sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_PAE));
 	if ((setsockopt(auth_8021x_sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0) {
 		lua_pushnumber(L, ERR_SOCKET);
+		close(auth_8021x_sock);
 		return 1;
 	}
 	// 设置 8021x socket
@@ -108,10 +109,12 @@ authtool_send_eap(lua_State *L)
 	strcpy(ifr.ifr_name, ifname);  	// global variable <ifname>
 	if(ioctl(auth_8021x_sock, SIOCGIFFLAGS, &ifr) < 0) {
 		lua_pushnumber(L, ERR_SOCKET);
+		close(auth_8021x_sock);
 		return 1;
 	}
 	if(ioctl(auth_8021x_sock, SIOCGIFINDEX, &ifr) < 0) {
 		lua_pushnumber(L, ERR_SOCKET);
+		close(auth_8021x_sock);
 		return 1;
 	}
 
@@ -125,6 +128,7 @@ authtool_send_eap(lua_State *L)
 	if (mode == 1 || mode == 3) {
 		if (0 == _auth_8021x_sender(auth_8021x_sock, data_send, length + 14, auth_8021x_addr)) {
 			lua_pushnumber(L, ERR_SOCKET);
+			close(auth_8021x_sock);
 			return 1;
 		}
 	}
@@ -138,11 +142,11 @@ authtool_send_eap(lua_State *L)
 			switch(select(auth_8021x_sock + 1, &fdR, NULL, NULL, &tmp_timeout)) {
 			case -1:
 				lua_pushnumber(L, ERR_SOCKET);
+				close(auth_8021x_sock);
 				return 1;
 			break;
 			case 0:
-				lua_pushnumber(L, ERR_TIMEOUT);
-				return 1;
+				// Just wait
 			break;
 			default:
 				if (FD_ISSET(auth_8021x_sock, &fdR)) {
@@ -240,6 +244,7 @@ authtool_send_udp(lua_State *L)
 	if (mode == 1 || mode == 3) {
 		if (0 == _auth_udp_sender(auth_udp_sock, data_send, length, server_addr)) {
 			lua_pushnumber(L, ERR_SOCKET);
+			close(auth_udp_sock);
 			return 1;
 		}
 	}
@@ -253,11 +258,11 @@ authtool_send_udp(lua_State *L)
 			switch (select(auth_udp_sock + 1, &fdR, NULL, NULL, &tmp_timeout)) {
 			case -1:
 				lua_pushnumber(L, ERR_SOCKET);
+				close(auth_udp_sock);
 				return 1;
 			break;
 			case 0:
-				lua_pushnumber(L, ERR_TIMEOUT);
-				return 1;
+				// Just wait
 			break;
 			default:
 				if (FD_ISSET(auth_udp_sock, &fdR)) {
