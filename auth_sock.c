@@ -50,7 +50,7 @@ static int32_t
 authtool_send_eap(lua_State *L)
 {
 	fd_set fdR;
-	int32_t argc, mode;
+	int32_t argc;
 	int32_t lua_callback = LUA_REFNIL;
 	int8_t * smac_char, dmac_char, data_char;
 	size_t length;
@@ -68,8 +68,8 @@ authtool_send_eap(lua_State *L)
 
 	// 获取参数
 	argc = lua_gettop(L);
-	if (argc < 3 || argc > 5)
-		return luaL_error(L, "Argument error: \n\teap(dmac, smac, data, timeout, function) \n");
+	if (argc < 4 || argc > 6)
+		return luaL_error(L, "Argument error: \n\teap(server_mac, client_mac, ifname, data, timeout, function) \n");
 
 	dmac_char = lua_tolstring(L, 1, &length);
 	smac_char = lua_tolstring(L, 2, &length);
@@ -77,24 +77,22 @@ authtool_send_eap(lua_State *L)
 	memcpy(data_send + 6, smac_char, 6);
 	data_send[12] = 0x88;
 	data_send[13] = 0x8e;
+	memcpy(ifname, lua_tolstring(L, 3, &length), length + 1);	// '\0'
 
 	switch (argc) {
-	case 3:
+	case 4:			//.eap(dmac, smac, ifname, data)
 		data_char = lua_tolstring(L, -1, &length);
-		memcpy(data_send + 14, data_char, length + 1);
-		mode = 1;
+		memcpy(data_send + 14, data_char, length);
 	break;
-	case 4:
+	case 5:			//.eap(dmac, smac, ifname, timeout, func(RECEIVED_DATA))
 		timeout.tv_sec = lua_tointeger(L, -2);
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
-		mode = 2;
 	break;
-	case 5:
+	case 6:			//.eap(dmac, smac, ifname, data, timeout, func(RECEIVED_DATA))
 		data_char = lua_tolstring(L, -3, &length);
-		memcpy(data_send + 14, data_char, length + 1);
+		memcpy(data_send + 14, data_char, length);
 		timeout.tv_sec = lua_tointeger(L, -2);
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
-		mode = 3;
 	break;
 	}
 
@@ -125,7 +123,7 @@ authtool_send_eap(lua_State *L)
 	auth_8021x_addr.sll_pkttype = PACKET_HOST;
 
 	// 发送
-	if (mode == 1 || mode == 3) {
+	if (argc == 4 || argc == 6) {
 		if (0 == _auth_8021x_sender(auth_8021x_sock, data_send, length + 14, auth_8021x_addr)) {
 			lua_pushnumber(L, ERR_SOCKET);
 			close(auth_8021x_sock);
@@ -133,7 +131,7 @@ authtool_send_eap(lua_State *L)
 		}
 	}
 
-	if (mode == 2 || mode == 3) {
+	if (argc == 5 || argc == 6) {
 		time_base = time(NULL);
 		while(time(NULL) - time_base < timeout.tv_sec) {
 			FD_ZERO(&fdR);
@@ -181,7 +179,7 @@ authtool_send_udp(lua_State *L)
 	uint16_t client_port = 61440;
 	size_t length;
 
-	int32_t argc, mode;
+	int32_t argc;
 	int32_t lua_callback = LUA_REFNIL;
 	struct sockaddr_in server_addr, client_addr;
 	int8_t * data_char = {0};
@@ -197,30 +195,27 @@ authtool_send_udp(lua_State *L)
 	// 获取参数
 	argc = lua_gettop(L);
 	if (argc < 5 || argc > 7)
-		return luaL_error(L, "Argument error: \n\tudp(dst_ip, dst_port, src_ip, src_port, data, timeout, func(RECEIVED_DATA)) \n");
+		return luaL_error(L, "Argument error: \n\tudp(server_ip, server_port, client_ip, client_port, data, timeout, func(RECEIVED_DATA)) \n");
 
 	server_ip = lua_tolstring(L, 1, &length);
 	server_port = lua_tointeger(L, 2);
-	client_ip = lua_tolstring(L, 3, &length);
+	client_ip = lua_tolstring(L, 3, &length);		// '\0' attached automatically
 	client_port = lua_tointeger(L, 4);
 
 	switch (argc) {
 	case 5:
 		data_char = lua_tolstring(L, -1, &length);
 		memcpy(data_send, data_char, length);
-		mode = 1;
 	break;
 	case 6:
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
 		timeout.tv_sec = lua_tointeger(L, -2);
-		mode = 2;
 	break:
 	case 7:
 		data_char = lua_tolstring(L, -3, &length);
 		memcpy(data_send, data_char, length);
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
 		timeout.tv_sec = lua_tointeger(L, -2);
-		mode = 3;
 	break;
 	}
 
@@ -241,7 +236,7 @@ authtool_send_udp(lua_State *L)
 
 	bind(auth_udp_sock, (struct sockaddr *)&(client_addr), sizeof(client_addr));
 
-	if (mode == 1 || mode == 3) {
+	if (argc == 5 || argc == 7) {
 		if (0 == _auth_udp_sender(auth_udp_sock, data_send, length, server_addr)) {
 			lua_pushnumber(L, ERR_SOCKET);
 			close(auth_udp_sock);
@@ -249,7 +244,7 @@ authtool_send_udp(lua_State *L)
 		}
 	}
 
-	if (mode == 2 || mode == 3) {
+	if (argc == 6 || argc == 7) {
 		time_base = time(NULL);
 		while(time(NULL) - time_base < timeout.tv_sec) {
 			FD_ZERO(&fdR);
