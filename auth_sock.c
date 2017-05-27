@@ -61,6 +61,7 @@ authtool_send_eap(lua_State *L)
 	struct ifreq ifr;
 	int32_t auth_8021x_sock;
 	struct sockaddr_ll auth_8021x_addr;
+	int32_t on = 1;		// ???
 
 	struct timeval timeout = {0, 0};
 	struct timeval tmp_timeout = timeout;
@@ -210,7 +211,7 @@ authtool_send_udp(lua_State *L)
 	case 6:
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
 		timeout.tv_sec = lua_tointeger(L, -2);
-	break:
+	break;
 	case 7:
 		data_char = lua_tolstring(L, -3, &length);
 		memcpy(data_send, data_char, length);
