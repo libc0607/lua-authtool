@@ -1,4 +1,4 @@
 # lua-authtool
-试图简化校园网认证程序在OpenWrt/LEDE上的开发难度的工具，just a simple binding of raw socket  
+本来是试图简化校园网认证程序在OpenWrt/LEDE上的开发难度的工具   
 
-还没写完。。。。还有很多bug 请不要试图使用（不过也没人发现吧  
+然后陷入了不知道该怎么造这个轮子的恐惧，有生之年吧
