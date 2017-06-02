@@ -74,10 +74,13 @@ authtool_send_eap(lua_State *L)
 	fd_set fdR;
 	int32_t argc;
 	int32_t lua_callback = LUA_REFNIL;
-	int8_t * smac_char, dmac_char, data_char, ifname_char;	// pointer got from stack
+	int8_t * smac_char;
+	int8_t * dmac_char;
+	int8_t * data_char;
+	int8_t * ifname_char;	// pointer got from stack
 	size_t length, send_data_length, recv_data_length;
-	uint8_t data_send[512] = {0};
-	uint8_t data_recv_buf[512] = {0};
+	uint8_t data_send[1024] = {0};
+	uint8_t data_recv_buf[1024] = {0};
 	int8_t ifname[16] = {0};
 
 	struct ifreq ifr;
@@ -94,26 +97,17 @@ authtool_send_eap(lua_State *L)
 	if (argc < 4 || argc > 6)
 		return luaL_error(L, "Argument error: \n\teap(server_mac, client_mac, ifname, data, timeout, function) \n");
 
-	printf("args ok\n");
+	printf("args ok, %d total\n", argc);
 
 	dmac_char = lua_tolstring(L, 1, &length);
-	dump_memory(dmac_char, 16, "dmac_char");
 	memcpy(data_send, dmac_char, 6);
-	dump_memory(data_send, 32, "eap_get_1");
 	smac_char = lua_tolstring(L, 2, &length);
 	memcpy(data_send + 6, smac_char, 6);
-	dump_memory(data_send, 32, "eap_get_2");
 	ifname_char = lua_tolstring(L, 3, &length);
-	//memcpy(ifname, ifname_char, 4);
+	memcpy(ifname, ifname_char, 4);
 	data_send[12] = 0x88;
 	data_send[13] = 0x8e;
 
-	dump_memory(data_send, 32, "eap_get_3");
-
-	data_char = lua_tolstring(L, -1, &send_data_length);
-	//memcpy(data_send + 14, data_char, send_data_length);
-	dump_memory(data_send, 32, "eap_get_4");
-/*
 	switch (argc) {
 	case 4:			//.eap(dmac, smac, ifname, data)
 		data_char = lua_tolstring(L, -1, &send_data_length);
@@ -129,8 +123,9 @@ authtool_send_eap(lua_State *L)
 		timeout.tv_sec = lua_tointeger(L, -2);
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
 	break;
-}
-*/
+	}
+
+	dump_memory(data_send, 64, "eap_full_packet");
 
 	auth_8021x_sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_PAE));
 
@@ -214,7 +209,9 @@ static int32_t
 authtool_send_udp(lua_State *L)
 {
 	fd_set fdR;
-	int8_t * server_ip_char, client_ip_char, data_char;
+	int8_t * server_ip_char;
+	int8_t * client_ip_char;
+	int8_t * data_char;
 	int8_t server_ip[16] = {0};
 	int8_t client_ip[16] = {0};
 	uint16_t server_port = 0, client_port = 0;

@@ -13,17 +13,8 @@ function toDec (d)
   end
   return s
 end
---
+-- 包的内容我随便写的 不用在意
 auth.eap(
   toHex([[\xff\xff\xff\xff\xff\xff]]), toHex([[\x00\x23\x74\x33\x68\x89]]),
   "eth0", toHex([[\x01\x00\x01\x34]])
-)
-
-auth.udp(
-  "192.168.159.1",
-  61440,
-  "192.168.159.129",
-  61440,
-  toHex([[\x23\x33\x33\x33\x33]])
-
 )
