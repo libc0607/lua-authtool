@@ -19,7 +19,7 @@ _auth_udp_receiver(int32_t sock, int8_t *recv_data, struct sockaddr_in serv_addr
                     (struct sockaddr*) &clntaddr, &addrlen);
 	return (recv_len > 0
 	     && memcmp(&clntaddr.sin_addr, &serv_addr.sin_addr, 4) == 0
-	     && recv_data[0] == 0x07)? 1: 0;
+	     && recv_data[0] == 0x07)? recv_len: 0;
 }
 
 int32_t
@@ -42,7 +42,29 @@ _auth_8021x_receiver(int32_t sock, uint8_t *dst_mac_filter, int8_t *recv_data, s
 
 	return (recv_len > 0
 	     && (0 == memcmp(recv_hdr->h_dest, dst_mac_filter, ETH_ALEN))
-	     && (htons(ETH_P_PAE) ==  recv_hdr->h_proto))? 1: 0;
+	     && (htons(ETH_P_PAE) ==  recv_hdr->h_proto))? recv_len: 0;
+}
+
+void dump_memory(void* p, int length, char * tag) {
+	int i,j;
+	unsigned char *addr = (unsigned char *)p;
+	printf("\n===== Memory dump at %s, 0x%x =====\n", tag, addr);
+	for(i=0; i<16; i++){
+		printf("%2x ", i);
+	}
+	printf("\n");
+	for(i=0; i<16; i++){
+		printf("---");
+	}
+	printf("\n");
+	// 一行16个
+	for(i=0; i<(length/16)+1; i++) {		// 貌似会多打印一些 不管他
+		for(j=0; j<16; j++) {
+			printf("%2x ", *(addr+i*16+j));
+		}
+		printf("\n");
+	}
+	printf("\n");
 }
 
 
@@ -52,10 +74,10 @@ authtool_send_eap(lua_State *L)
 	fd_set fdR;
 	int32_t argc;
 	int32_t lua_callback = LUA_REFNIL;
-	int8_t * smac_char, dmac_char, data_char;
-	size_t length;
-	uint8_t data_send[1024] = {0};
-	uint8_t data_recv_buf[1024] = {0};
+	int8_t * smac_char, dmac_char, data_char, ifname_char;	// pointer got from stack
+	size_t length, send_data_length, recv_data_length;
+	uint8_t data_send[512] = {0};
+	uint8_t data_recv_buf[512] = {0};
 	int8_t ifname[16] = {0};
 
 	struct ifreq ifr;
@@ -72,40 +94,55 @@ authtool_send_eap(lua_State *L)
 	if (argc < 4 || argc > 6)
 		return luaL_error(L, "Argument error: \n\teap(server_mac, client_mac, ifname, data, timeout, function) \n");
 
+	printf("args ok\n");
+
 	dmac_char = lua_tolstring(L, 1, &length);
-	smac_char = lua_tolstring(L, 2, &length);
+	dump_memory(dmac_char, 16, "dmac_char");
 	memcpy(data_send, dmac_char, 6);
+	dump_memory(data_send, 32, "eap_get_1");
+	smac_char = lua_tolstring(L, 2, &length);
 	memcpy(data_send + 6, smac_char, 6);
+	dump_memory(data_send, 32, "eap_get_2");
+	ifname_char = lua_tolstring(L, 3, &length);
+	//memcpy(ifname, ifname_char, 4);
 	data_send[12] = 0x88;
 	data_send[13] = 0x8e;
-	memcpy(ifname, lua_tolstring(L, 3, &length), length + 1);	// '\0'
 
+	dump_memory(data_send, 32, "eap_get_3");
+
+	data_char = lua_tolstring(L, -1, &send_data_length);
+	//memcpy(data_send + 14, data_char, send_data_length);
+	dump_memory(data_send, 32, "eap_get_4");
+/*
 	switch (argc) {
 	case 4:			//.eap(dmac, smac, ifname, data)
-		data_char = lua_tolstring(L, -1, &length);
-		memcpy(data_send + 14, data_char, length);
+		data_char = lua_tolstring(L, -1, &send_data_length);
+		memcpy(data_send + 14, data_char, send_data_length);
 	break;
-	case 5:			//.eap(dmac, smac, ifname, timeout, func(RECEIVED_DATA))
+	case 5:			//.eap(dmac, smac, ifname, timeout, func(LENGTH, RECEIVED_DATA))
 		timeout.tv_sec = lua_tointeger(L, -2);
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
 	break;
-	case 6:			//.eap(dmac, smac, ifname, data, timeout, func(RECEIVED_DATA))
-		data_char = lua_tolstring(L, -3, &length);
-		memcpy(data_send + 14, data_char, length);
+	case 6:			//.eap(dmac, smac, ifname, data, timeout, func(LENGTH, RECEIVED_DATA))
+		data_char = lua_tolstring(L, -3, &send_data_length);
+		memcpy(data_send + 14, data_char, send_data_length);
 		timeout.tv_sec = lua_tointeger(L, -2);
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
 	break;
-	}
+}
+*/
 
 	auth_8021x_sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_PAE));
+
 	if ((setsockopt(auth_8021x_sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0) {
 		lua_pushnumber(L, ERR_SOCKET);
 		close(auth_8021x_sock);
 		return 1;
 	}
+
 	// 设置 8021x socket
 	bzero(&ifr, sizeof(ifr));
-	strcpy(ifr.ifr_name, ifname);  	// global variable <ifname>
+	strcpy(ifr.ifr_name, ifname);
 	if(ioctl(auth_8021x_sock, SIOCGIFFLAGS, &ifr) < 0) {
 		lua_pushnumber(L, ERR_SOCKET);
 		close(auth_8021x_sock);
@@ -125,7 +162,7 @@ authtool_send_eap(lua_State *L)
 
 	// 发送
 	if (argc == 4 || argc == 6) {
-		if (0 == _auth_8021x_sender(auth_8021x_sock, data_send, length + 14, auth_8021x_addr)) {
+		if (0 == _auth_8021x_sender(auth_8021x_sock, data_send, send_data_length + 14, auth_8021x_addr)) {
 			lua_pushnumber(L, ERR_SOCKET);
 			close(auth_8021x_sock);
 			return 1;
@@ -133,6 +170,7 @@ authtool_send_eap(lua_State *L)
 	}
 
 	if (argc == 5 || argc == 6) {
+
 		time_base = time(NULL);
 		while(time(NULL) - time_base < timeout.tv_sec) {
 			FD_ZERO(&fdR);
@@ -149,10 +187,12 @@ authtool_send_eap(lua_State *L)
 			break;
 			default:
 				if (FD_ISSET(auth_8021x_sock, &fdR)) {
-					if(_auth_8021x_receiver(auth_8021x_sock, smac_char, data_recv_buf, auth_8021x_addr)) {
+					recv_data_length = _auth_8021x_receiver(auth_8021x_sock, smac_char, data_recv_buf, auth_8021x_addr);
+					if(recv_data_length > 0) {
 						lua_rawgeti(L, LUA_REGISTRYINDEX, lua_callback);
+						lua_pushnumber(L, recv_data_length);
 						lua_pushstring(L, (char*)data_recv_buf);
-						lua_pcall(L, 1, 0, 0);		// 1 arg, 0 return
+						lua_pcall(L, 2, 0, 0);		// 1 arg, 0 return
 						time_base = 0;	// 退出循环
 					}
 				}
@@ -174,16 +214,14 @@ static int32_t
 authtool_send_udp(lua_State *L)
 {
 	fd_set fdR;
-	uint8_t * server_ip = "127.0.0.1";
-	uint8_t * client_ip = "127.0.0.1";
-	uint16_t server_port = 61440;
-	uint16_t client_port = 61440;
-	size_t length;
+	int8_t * server_ip_char, client_ip_char, data_char;
+	int8_t server_ip[16] = {0};
+	int8_t client_ip[16] = {0};
+	uint16_t server_port = 0, client_port = 0;
+	size_t length, send_data_length, recv_data_length;
 
-	int32_t argc;
-	int32_t lua_callback = LUA_REFNIL;
+	int32_t argc, lua_callback = LUA_REFNIL;
 	struct sockaddr_in server_addr, client_addr;
-	int8_t * data_char = {0};
 	uint8_t data_send[1024] = {0};
 	uint8_t data_recv_buf[1024] = {0};
 	int32_t auth_udp_sock = 0;
@@ -198,23 +236,25 @@ authtool_send_udp(lua_State *L)
 	if (argc < 5 || argc > 7)
 		return luaL_error(L, "Argument error: \n\tudp(server_ip, server_port, client_ip, client_port, data, timeout, func(RECEIVED_DATA)) \n");
 
-	server_ip = lua_tolstring(L, 1, &length);
+	server_ip_char = lua_tolstring(L, 1, &length);
+	memcpy(server_ip, server_ip_char, length);		// 复制一份以免出什么奇怪的bug
 	server_port = lua_tointeger(L, 2);
-	client_ip = lua_tolstring(L, 3, &length);		// '\0' attached automatically
+	client_ip_char = lua_tolstring(L, 3, &length);		// '\0' attached automatically
+	memcpy(client_ip, client_ip_char, length);
 	client_port = lua_tointeger(L, 4);
 
 	switch (argc) {
 	case 5:
-		data_char = lua_tolstring(L, -1, &length);
-		memcpy(data_send, data_char, length);
+		data_char = lua_tolstring(L, -1, &send_data_length);
+		memcpy(data_send, data_char, send_data_length);
 	break;
 	case 6:
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
 		timeout.tv_sec = lua_tointeger(L, -2);
 	break;
 	case 7:
-		data_char = lua_tolstring(L, -3, &length);
-		memcpy(data_send, data_char, length);
+		data_char = lua_tolstring(L, -3, &send_data_length);
+		memcpy(data_send, data_char, send_data_length);
 		lua_callback = luaL_ref(L, LUA_REGISTRYINDEX);
 		timeout.tv_sec = lua_tointeger(L, -2);
 	break;
@@ -238,7 +278,7 @@ authtool_send_udp(lua_State *L)
 	bind(auth_udp_sock, (struct sockaddr *)&(client_addr), sizeof(client_addr));
 
 	if (argc == 5 || argc == 7) {
-		if (0 == _auth_udp_sender(auth_udp_sock, data_send, length, server_addr)) {
+		if (0 == _auth_udp_sender(auth_udp_sock, data_send, send_data_length, server_addr)) {
 			lua_pushnumber(L, ERR_SOCKET);
 			close(auth_udp_sock);
 			return 1;
@@ -262,17 +302,19 @@ authtool_send_udp(lua_State *L)
 			break;
 			default:
 				if (FD_ISSET(auth_udp_sock, &fdR)) {
-					if(_auth_udp_receiver(auth_udp_sock, data_recv_buf, server_addr)) {
+					recv_data_length = _auth_udp_receiver(auth_udp_sock, data_recv_buf, server_addr);
+					if(recv_data_length > 0) {
 						lua_rawgeti(L, LUA_REGISTRYINDEX, lua_callback);
+						lua_pushnumber(L, recv_data_length);
 						lua_pushstring(L, (char*)data_recv_buf);
-						lua_pcall(L, 1, 0, 0);		// 1 arg, 0 return
+						lua_pcall(L, 2, 0, 0);		// 1 arg, 0 return
 						time_base = 0;	// 退出循环
 					}
 				}
 			break;
 			} 	//switch
 		}	//while
-	} // if argc == 6
+	} // if argc == 6or7
 	if (0 == close(auth_udp_sock)) {
 		lua_pushnumber(L, SUCCESS);
 		return 1;
