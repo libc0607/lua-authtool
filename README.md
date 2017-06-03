@@ -1,5 +1,5 @@
 # lua-authtool
-一个Linux下 raw socket 的简单的 Lua Binding  
+一个Linux下 raw socket 的简单的 Lua Binding，可以发或者收 ‘eth.type == 0x888e || udp’ ，都是阻塞的  
 
 本来是试图简化校园网认证程序在OpenWrt/LEDE上的开发难度的工具，然后不小心把轮子造成了阻塞的，至于异步版大概。。有生之年吧  
 
